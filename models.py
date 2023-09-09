@@ -7,63 +7,40 @@ from x_transformers.autoregressive_wrapper import *
 
 from timm.models.swin_transformer import SwinTransformer
 
-import utils
 
 class SwinTransformerOCR(pl.LightningModule):
-    def __init__(self, cfg, tokenizer):
+    def __init__(self, ):
         super().__init__()
-        self.cfg = cfg
-        self.tokenizer = tokenizer
 
-        self.encoder = CustomSwinTransformer( img_size=(cfg.height, cfg.width),
-                                        patch_size=cfg.patch_size,
-                                        in_chans=cfg.channels,
+        self.encoder = CustomSwinTransformer( img_size=(112, 448),
+                                        patch_size=4,
+                                        in_chans=3,
                                         num_classes=0,
-                                        window_size=cfg.window_size,
-                                        embed_dim=cfg.encoder_dim,
-                                        depths=cfg.encoder_depth,
-                                        num_heads=cfg.encoder_heads
+                                        window_size=7,
+                                        embed_dim=96,
+                                        depths= [2, 6, 2],
+                                        num_heads=[6, 12, 24]
                                         )
         self.decoder = CustomARWrapper(
                         TransformerWrapper(
-                            num_tokens=len(tokenizer),
-                            max_seq_len=cfg.max_seq_len,
+                            num_tokens=187 + 4,
+                            max_seq_len=32,
                             attn_layers=Decoder(
-                                dim=cfg.decoder_dim,
-                                depth=cfg.decoder_depth,
-                                heads=cfg.decoder_heads,
-                                **cfg.decoder_cfg
+                                dim=384,
+                                depth=4,
+                                heads=8,
+                                cross_attend= True,
+                                ff_glu= False,
+                                attn_on_attn= False,
+                                use_scalenorm= False,
+                                rel_pos_bias= False
                             )),
-                        pad_value=cfg.pad_token
+                        pad_value=0,
                     )
-        self.bos_token = cfg.bos_token
-        self.eos_token = cfg.eos_token
-        self.max_seq_len = cfg.max_seq_len
-        self.temperature = cfg.temperature
-
-    def configure_optimizers(self):
-        optimizer = getattr(torch.optim, self.cfg.optimizer)
-        optimizer = optimizer(self.parameters(), lr=float(self.cfg.lr))
-
-        if not self.cfg.scheduler:
-            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1)
-            scheduler = {
-                'scheduler': scheduler, 'interval': "epoch", "name": "learning rate"
-            }
-            return [optimizer], [scheduler]
-        elif hasattr(torch.optim.lr_scheduler, self.cfg.scheduler):
-            scheduler = getattr(torch.optim.lr_scheduler, self.cfg.scheduler)
-        elif hasattr(utils, self.cfg.scheduler):
-            scheduler = getattr(utils, self.cfg.scheduler)
-        else:
-            raise ModuleNotFoundError
-
-        scheduler = {
-            'scheduler': scheduler(optimizer, **self.cfg.scheduler_param),
-            'interval': self.cfg.scheduler_interval,
-            'name': "learning rate"
-            }
-        return [optimizer], [scheduler]
+        self.bos_token = 1
+        self.eos_token = 2
+        self.max_seq_len = 32
+        self.temperature = 0.2
 
     def forward(self, x):
         '''
@@ -146,10 +123,15 @@ class CustomSwinTransformer(SwinTransformer):
         self.height, self.width = img_size
 
     def forward_features(self, x):
+        print(x.shape)
         x = self.patch_embed(x)
+        print(x.shape)
         x = self.pos_drop(x)
+        print(x.shape)
         x = self.layers(x)
+        print(x.shape)
         x = self.norm(x)  # B L C
+        print(x.shape)
 
         return x
 
@@ -202,3 +184,9 @@ class CustomARWrapper(AutoregressiveWrapper):
 
         self.net.train(was_training)
         return out
+    
+if __name__=='__main__':
+    x = torch.randn(2, 3, 112, 448)
+    model = SwinTransformerOCR()
+    output = model(x)
+    print(output.shape)
