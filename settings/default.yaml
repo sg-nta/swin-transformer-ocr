@@ -1,5 +1,5 @@
 # Input/Output/Name
-image_dir: "dataset/images"
+image_dir: '/kaggle/input/ocr-v3/training_data/new_train'
 train_data: "dataset/train.txt"
 val_data: "dataset/val.txt"
 tokenizer: "dataset/tokenizer.pkl"

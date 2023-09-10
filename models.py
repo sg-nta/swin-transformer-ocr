@@ -123,15 +123,10 @@ class CustomSwinTransformer(SwinTransformer):
         self.height, self.width = img_size
 
     def forward_features(self, x):
-        print(x.shape)
         x = self.patch_embed(x)
-        print(x.shape)
         x = self.pos_drop(x)
-        print(x.shape)
         x = self.layers(x)
-        print(x.shape)
         x = self.norm(x)  # B L C
-        print(x.shape)
 
         return x
 
