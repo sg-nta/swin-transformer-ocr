@@ -9,38 +9,60 @@ from timm.models.swin_transformer import SwinTransformer
 
 
 class SwinTransformerOCR(pl.LightningModule):
-    def __init__(self, ):
+    def __init__(self, cfg, tokenizer ):
         super().__init__()
+        self.tokenizer = tokenizer
+        self.cfg = cfg
 
-        self.encoder = CustomSwinTransformer( img_size=(112, 448),
-                                        patch_size=4,
-                                        in_chans=3,
+        self.encoder = CustomSwinTransformer( img_size=(cfg.height, cfg.width),
+                                        patch_size=cfg.patch_size,
+                                        in_chans=cfg.channels,
                                         num_classes=0,
-                                        window_size=7,
-                                        embed_dim=96,
-                                        depths= [2, 6, 2],
-                                        num_heads=[6, 12, 24]
+                                        window_size=cfg.window_size,
+                                        embed_dim=cfg.encoder_dim,
+                                        depths=cfg.encoder_depth,
+                                        num_heads=cfg.encoder_heads
                                         )
         self.decoder = CustomARWrapper(
                         TransformerWrapper(
-                            num_tokens=187 + 4,
-                            max_seq_len=32,
+                            num_tokens=len(tokenizer),
+                            max_seq_len=cfg.max_seq_len,
                             attn_layers=Decoder(
-                                dim=384,
-                                depth=4,
-                                heads=8,
-                                cross_attend= True,
-                                ff_glu= False,
-                                attn_on_attn= False,
-                                use_scalenorm= False,
-                                rel_pos_bias= False
+                                dim=cfg.decoder_dim,
+                                depth=cfg.decoder_depth,
+                                heads=cfg.decoder_heads,
+                                **cfg.decoder_cfg
                             )),
-                        pad_value=0,
+                        pad_value=cfg.pad_token
                     )
-        self.bos_token = 1
-        self.eos_token = 2
-        self.max_seq_len = 32
-        self.temperature = 0.2
+        self.bos_token = cfg.bos_token
+        self.eos_token = cfg.eos_token
+        self.max_seq_len = cfg.max_seq_len
+        self.temperature = cfg.temperature
+
+    def configure_optimizers(self):
+        optimizer = getattr(torch.optim, self.cfg.optimizer)
+        optimizer = optimizer(self.parameters(), lr=float(self.cfg.lr))
+
+        if not self.cfg.scheduler:
+            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1)
+            scheduler = {
+                'scheduler': scheduler, 'interval': "epoch", "name": "learning rate"
+            }
+            return [optimizer], [scheduler]
+        elif hasattr(torch.optim.lr_scheduler, self.cfg.scheduler):
+            scheduler = getattr(torch.optim.lr_scheduler, self.cfg.scheduler)
+        elif hasattr(utils, self.cfg.scheduler):
+            scheduler = getattr(utils, self.cfg.scheduler)
+        else:
+            raise ModuleNotFoundError
+
+        scheduler = {
+            'scheduler': scheduler(optimizer, **self.cfg.scheduler_param),
+            'interval': self.cfg.scheduler_interval,
+            'name': "learning rate"
+            }
+        return [optimizer], [scheduler]
 
     def forward(self, x):
         '''
